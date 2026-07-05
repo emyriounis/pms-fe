@@ -1,0 +1,116 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: ['main']
+
+env:
+  AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+  AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+
+jobs:
+  fetch-pms-fe-config:
+    runs-on: ubuntu-24.04
+    environment: dev
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v6
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: 1.11.1
+
+      - name: Fetch PMS-FE Config
+        working-directory: scripts
+        env:
+          TF_WORKSPACE: dev
+        run: |
+          terraform init
+          terraform apply -auto-approve -var-file=../terraform/config/dev.tfvars
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v6
+        with:
+          name: pms-fe-env-artifact
+          path: scripts/pms_fe.env
+
+  test-pms-fe-terraform:
+    container:
+      image: aquasec/trivy@sha256:be1190afcb28352bfddc4ddeb71470835d16462af68d310f9f4bca710961a41e # v0.70
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+      - name: Run Trivy IaC Scanner
+        run: trivy config terraform --severity CRITICAL --exit-code 1
+
+  test-pms-fe:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: 'npm'
+          cache-dependency-path: package-lock.json
+      - run: |
+          cp .env.test .env
+          npm ci
+          npm run test
+
+  build-pms-fe:
+    needs:
+      - fetch-pms-fe-config
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: 'npm'
+          cache-dependency-path: package-lock.json
+
+      - name: Download Config Artifact
+        uses: actions/download-artifact@v7
+        with:
+          name: pms-fe-env-artifact
+          path: scripts
+
+      - run: |
+          cp scripts/pms_fe.env .env
+          npm ci
+          npm run build
+      - uses: actions/upload-artifact@v6
+        with:
+          name: pms-fe-artifacts
+          path: build
+
+  deploy-dev-pms-fe:
+    needs:
+      - test-pms-fe-terraform
+      - test-pms-fe
+      - build-pms-fe
+    runs-on: ubuntu-24.04
+    environment: dev
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v6
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: 1.11.1
+
+      - name: Download Artifacts - pms-fe
+        uses: actions/download-artifact@v7
+        with:
+          name: pms-fe-artifacts
+          path: build
+
+      - name: Deploy
+        working-directory: terraform
+        env:
+          TF_WORKSPACE: dev
+        run: |
+          terraform init
+          terraform apply -auto-approve -var-file=config/dev.tfvars

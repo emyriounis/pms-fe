@@ -24,12 +24,12 @@ terraform {
   }
 }
 
-data "terraform_remote_state" "expressjs" {
+data "terraform_remote_state" "pms_backend" {
   backend   = "s3"
   workspace = terraform.workspace
   config = {
     bucket = "myriounis-terraform-state"
-    key    = "aws-expressjs-nextjs-template/expressjs.tfstate"
+    key    = "pms/backend.tfstate"
     region = "eu-central-1"
   }
 }
@@ -63,10 +63,10 @@ variable "global_region" {
 resource "local_file" "pms_fe_env" {
   filename = "${path.module}/pms_fe.env"
   content  = <<-EOT
-REACT_APP_COGNITO_USER_POOL_ID=${data.terraform_remote_state.expressjs.outputs.cognito_user_pool_id}
-REACT_APP_COGNITO_CLIENT_ID=${data.terraform_remote_state.expressjs.outputs.cognito_client_id}
-REACT_APP_COGNITO_DOMAIN=${data.terraform_remote_state.expressjs.outputs.cognito_domain}
-REACT_APP_PMS_BE_DOMAIN=https://${data.terraform_remote_state.expressjs.outputs.domain}
+REACT_APP_COGNITO_USER_POOL_ID=${data.terraform_remote_state.pms_backend.outputs.cognito_user_pool_id}
+REACT_APP_COGNITO_CLIENT_ID=${data.terraform_remote_state.pms_backend.outputs.cognito_client_id}
+REACT_APP_COGNITO_DOMAIN=${data.terraform_remote_state.pms_backend.outputs.cognito_domain}
+REACT_APP_PMS_BE_DOMAIN=https://${data.terraform_remote_state.pms_backend.outputs.domain}
 REACT_APP_COGNITO_REDIRECT_SIGNIN=["http://localhost:3000", "https://${var.domain}"]
 REACT_APP_COGNITO_REDIRECT_SIGNOUT=["http://localhost:3000", "https://${var.domain}"]
 EOT

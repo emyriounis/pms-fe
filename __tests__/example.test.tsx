@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import App from '../src/App';
 import { fetchUserAttributes } from 'aws-amplify/auth';
 
@@ -58,6 +58,7 @@ describe('App role rendering', () => {
     (fetchUserAttributes as jest.Mock).mockResolvedValue({
       email: 'tenant@example.com',
       'custom:role': 'tenant_admin',
+      'custom:tenantId': 'test-tenant-uuid',
     });
 
     render(<App />);
@@ -65,7 +66,7 @@ describe('App role rendering', () => {
     await waitFor(() => {
       expect(screen.getByText(/Tenant Admin Dashboard/i)).toBeInTheDocument();
     });
-    expect(screen.getByText(/Role: tenant_admin/i)).toBeInTheDocument();
+    expect(screen.getByText(/Manage hotels, configurations, rooms/i)).toBeInTheDocument();
   });
 
   it('renders Access Denied / No permissions if custom:role is anything else', async () => {
@@ -82,5 +83,80 @@ describe('App role rendering', () => {
     expect(
       screen.getByText(/You do not have permissions to access this screen/i),
     ).toBeInTheDocument();
+  });
+
+  it('renders Bulk Update Rates button when a room type is selected under calendar rates tab', async () => {
+    const mockHotel = {
+      id: 'hotel-1',
+      tenantId: 'test-tenant-uuid',
+      name: 'Grand Resort',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    const mockRoomType = {
+      id: 'rt-1',
+      hotelId: 'hotel-1',
+      name: 'Deluxe Room',
+      description: 'A cozy deluxe room',
+      baseNightlyRate: 150,
+      maxGuests: 2,
+      maxAdults: 2,
+      maxChildren: 0,
+      maxInfants: 0,
+      excludeInfantsFromMaxGuests: false,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+
+    (fetchUserAttributes as jest.Mock).mockResolvedValue({
+      email: 'tenant@example.com',
+      'custom:role': 'tenant_admin',
+      'custom:tenantId': 'test-tenant-uuid',
+    });
+
+    const { fetcher } = require('../src/lib/fetcher');
+    (fetcher as jest.Mock).mockImplementation((path: string) => {
+      if (path.endsWith('/hotels')) {
+        return Promise.resolve([mockHotel]);
+      }
+      if (path.endsWith('/room-types')) {
+        return Promise.resolve([mockRoomType]);
+      }
+      if (path.includes('/rates')) {
+        return Promise.resolve([]);
+      }
+      if (path.includes('/rooms')) {
+        return Promise.resolve([]);
+      }
+      return Promise.resolve([]);
+    });
+
+    render(<App />);
+
+    // Expand the hotel row
+    const expandBtn = await screen.findByRole('button', { name: /Expand/i });
+    expect(expandBtn).toBeInTheDocument();
+    fireEvent.click(expandBtn);
+
+    // Click Calendar Rates tab
+    const ratesTabBtn = await screen.findByRole('button', { name: /Calendar Rates/i });
+    expect(ratesTabBtn).toBeInTheDocument();
+    fireEvent.click(ratesTabBtn);
+
+    // Verify select dropdown and bulk update button are visible
+    const selectEl = await screen.findByRole('combobox');
+    expect(selectEl).toBeInTheDocument();
+
+    const bulkBtn = await screen.findByRole('button', { name: /Bulk Update Rates/i });
+    expect(bulkBtn).toBeInTheDocument();
+    fireEvent.click(bulkBtn);
+
+    // Verify modal elements are visible
+    await waitFor(() => {
+      expect(screen.getByText(/Bulk Update Rates for Grand Resort/i)).toBeInTheDocument();
+    });
+    expect(screen.getByLabelText(/Start Date/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/End Date/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/Nightly Rate/i)).toBeInTheDocument();
   });
 });

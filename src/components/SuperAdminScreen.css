@@ -233,7 +233,12 @@
 /* Skeletons & Empty State */
 .skeleton-line {
   height: 20px;
-  background: linear-gradient(90deg, var(--bg-tertiary) 25%, rgba(51, 65, 85, 0.6) 50%, var(--bg-tertiary) 75%);
+  background: linear-gradient(
+    90deg,
+    var(--bg-tertiary) 25%,
+    rgba(51, 65, 85, 0.6) 50%,
+    var(--bg-tertiary) 75%
+  );
   background-size: 200% 100%;
   animation: pulse 1.5s infinite;
   border-radius: var(--radius-sm);
@@ -265,21 +270,215 @@
 
 /* Animations */
 @keyframes fadeIn {
-  from { opacity: 0; }
-  to { opacity: 1; }
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
 }
 
 @keyframes scaleIn {
-  from { opacity: 0; transform: scale(0.95) translateY(10px); }
-  to { opacity: 1; transform: scale(1) translateY(0); }
+  from {
+    opacity: 0;
+    transform: scale(0.95) translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
 }
 
 @keyframes slideDown {
-  from { opacity: 0; transform: translateY(-10px); }
-  to { opacity: 1; transform: translateY(0); }
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 @keyframes pulse {
-  0% { background-position: 200% 0; }
-  100% { background-position: -200% 0; }
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+/* Nested Hotels Styles */
+.expand-btn {
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  padding: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  transition: all 0.2s ease;
+}
+
+.expand-btn:hover {
+  background-color: rgba(255, 255, 255, 0.05);
+  color: var(--text-primary);
+}
+
+.expand-chevron {
+  transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.expand-btn.expanded .expand-chevron {
+  transform: rotate(90deg);
+}
+
+.nested-row {
+  background-color: rgba(5, 8, 16, 0.4);
+}
+
+.nested-hotels-container {
+  padding: 16px 24px 24px 52px;
+  border-bottom: 1px solid var(--border-color);
+  animation: slideDown 0.25s ease-out;
+}
+
+.nested-hotels-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 14px;
+}
+
+.nested-hotels-header h4 {
+  margin: 0;
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.nested-hotels-table-wrapper {
+  border-radius: var(--radius-md);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  overflow: hidden;
+  background-color: rgba(10, 15, 29, 0.2);
+}
+
+.nested-hotels-table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+  font-size: 0.88rem;
+}
+
+.nested-hotels-table th {
+  background-color: rgba(255, 255, 255, 0.02);
+  color: var(--text-muted);
+  font-weight: 600;
+  text-transform: uppercase;
+  font-size: 0.75rem;
+  letter-spacing: 0.05em;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.nested-hotels-table td {
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border-color);
+  color: var(--text-primary);
+}
+
+.nested-hotels-table tbody tr {
+  transition: background-color 0.2s ease;
+}
+
+.nested-hotels-table tbody tr:hover {
+  background-color: rgba(255, 255, 255, 0.01);
+}
+
+.nested-hotels-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.nested-hotels-empty {
+  padding: 24px;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 0.88rem;
+}
+
+/* Calendar Rates Grid Styles */
+.calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.calendar-day-cell {
+  background-color: rgba(255, 255, 255, 0.02);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+  min-height: 80px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  box-sizing: border-box;
+}
+
+.calendar-day-cell:hover {
+  background-color: rgba(99, 102, 241, 0.05);
+  border-color: var(--accent);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+}
+
+.calendar-day-cell.other-month {
+  opacity: 0.3;
+  background-color: transparent;
+}
+
+.calendar-day-number {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.calendar-day-cell:hover .calendar-day-number {
+  color: var(--text-primary);
+}
+
+.calendar-day-price {
+  font-size: 0.95rem;
+  font-weight: 700;
+  text-align: right;
+  margin-top: auto;
+}
+
+.calendar-day-price.special-rate {
+  color: var(--success);
+}
+
+.calendar-day-price.base-rate {
+  color: var(--text-secondary);
+}
+
+.calendar-day-special-indicator {
+  align-self: flex-start;
+  font-size: 0.65rem;
+  font-weight: 600;
+  padding: 1px 4px;
+  border-radius: 3px;
+  background-color: var(--success-light);
+  color: #a7f3d0;
+  border: 1px solid var(--success);
 }

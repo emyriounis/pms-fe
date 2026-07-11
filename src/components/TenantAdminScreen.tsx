@@ -837,21 +837,6 @@ export const TenantAdminScreen = () => {
     }
   };
 
-  const formatLocalDate = (dateStr: string) => {
-    try {
-      const date = new Date(dateStr);
-      if (isNaN(date.getTime())) return 'N/A';
-      return date.toLocaleDateString(undefined, {
-        year: 'numeric',
-        month: 'short',
-        day: 'numeric',
-        timeZone: 'UTC',
-      });
-    } catch (_) {
-      return 'N/A';
-    }
-  };
-
   if (userLoading) {
     return (
       <div className="dashboard-container">

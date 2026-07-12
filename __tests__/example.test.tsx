@@ -159,4 +159,163 @@ describe('App role rendering', () => {
     expect(screen.getByLabelText(/End Date/i)).toBeInTheDocument();
     expect(screen.getByLabelText(/Nightly Rate/i)).toBeInTheDocument();
   });
+
+  it('renders Bookings list and timeline view toggle with controls', async () => {
+    const mockHotel = {
+      id: 'hotel-1',
+      tenantId: 'test-tenant-uuid',
+      name: 'Grand Resort',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    const mockBooking = {
+      id: 'b-1',
+      hotelId: 'hotel-1',
+      guestFirstName: 'Jane',
+      guestLastName: 'Doe',
+      guestPhone: '+306900000000',
+      channel: 'Direct',
+      checkInDate: '2026-07-12',
+      checkOutDate: '2026-07-15',
+      roomTypeId: 'rt-1',
+      roomId: 'room-1',
+      adults: 2,
+      children: 0,
+      infants: 0,
+      totalPrice: 450.0,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      roomType: { name: 'Deluxe Room' },
+      room: { roomNumber: '101' },
+    };
+
+    (fetchUserAttributes as jest.Mock).mockResolvedValue({
+      email: 'tenant@example.com',
+      'custom:role': 'tenant_admin',
+      'custom:tenantId': 'test-tenant-uuid',
+    });
+
+    const { fetcher } = require('../src/lib/fetcher');
+    (fetcher as jest.Mock).mockImplementation((path: string) => {
+      if (path.endsWith('/hotels')) {
+        return Promise.resolve([mockHotel]);
+      }
+      if (path.includes('/bookings')) {
+        return Promise.resolve([mockBooking]);
+      }
+      if (path.includes('/rooms')) {
+        return Promise.resolve([]);
+      }
+      return Promise.resolve([]);
+    });
+
+    render(<App />);
+
+    // Expand the hotel row
+    const expandBtn = await screen.findByRole('button', { name: /Expand/i });
+    fireEvent.click(expandBtn);
+
+    // Click Bookings tab
+    const bookingsTabBtn = await screen.findByRole('button', { name: /Bookings/i });
+    expect(bookingsTabBtn).toBeInTheDocument();
+    fireEvent.click(bookingsTabBtn);
+
+    // Verify bookings list is displayed first (default)
+    expect(await screen.findByText(/Hotel Bookings \(1\)/i)).toBeInTheDocument();
+    expect(screen.getByText(/Jane Doe/i)).toBeInTheDocument();
+
+    // Verify view toggles exist
+    const timelineToggleBtn = screen.getByRole('button', { name: /Timeline View/i });
+    expect(timelineToggleBtn).toBeInTheDocument();
+    fireEvent.click(timelineToggleBtn);
+
+    // Verify timeline controls toolbar is visible
+    expect(await screen.findByRole('button', { name: /◀ Prev/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Next ▶/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Today/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /7 Days/i })).toBeInTheDocument();
+  });
+
+  it('opens Assign Room Modal when change/assign link is clicked under bookings list', async () => {
+    const mockHotel = {
+      id: 'hotel-1',
+      tenantId: 'test-tenant-uuid',
+      name: 'Grand Resort',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    const mockBooking = {
+      id: 'b-1',
+      hotelId: 'hotel-1',
+      guestFirstName: 'Jane',
+      guestLastName: 'Doe',
+      guestPhone: '+306900000000',
+      channel: 'Direct',
+      checkInDate: '2026-07-12',
+      checkOutDate: '2026-07-15',
+      roomTypeId: 'rt-1',
+      roomId: 'room-1',
+      adults: 2,
+      children: 0,
+      infants: 0,
+      totalPrice: 450.0,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      roomType: { name: 'Deluxe Room' },
+      room: { id: 'room-1', roomNumber: '101' },
+    };
+    const mockRoom = {
+      id: 'room-2',
+      hotelId: 'hotel-1',
+      roomTypeId: 'rt-1',
+      roomNumber: '102',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+
+    (fetchUserAttributes as jest.Mock).mockResolvedValue({
+      email: 'tenant@example.com',
+      'custom:role': 'tenant_admin',
+      'custom:tenantId': 'test-tenant-uuid',
+    });
+
+    const { fetcher } = require('../src/lib/fetcher');
+    (fetcher as jest.Mock).mockImplementation((path: string) => {
+      if (path.endsWith('/hotels')) {
+        return Promise.resolve([mockHotel]);
+      }
+      if (path.includes('/bookings')) {
+        return Promise.resolve([mockBooking]);
+      }
+      if (path.includes('/rooms')) {
+        return Promise.resolve([mockBooking.room, mockRoom]);
+      }
+      return Promise.resolve([]);
+    });
+
+    render(<App />);
+
+    // Expand the hotel row
+    const expandBtn = await screen.findByRole('button', { name: /Expand/i });
+    fireEvent.click(expandBtn);
+
+    // Click Bookings tab
+    const bookingsTabBtn = await screen.findByRole('button', { name: /Bookings/i });
+    fireEvent.click(bookingsTabBtn);
+
+    // Click the "Change" room assignment button
+    const changeBtn = await screen.findByRole('button', { name: /Change/i });
+    expect(changeBtn).toBeInTheDocument();
+    fireEvent.click(changeBtn);
+
+    // Verify Assign Room Modal is displayed
+    expect(await screen.findByText(/Assign Room: Jane Doe/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/Select Physical Room/i)).toBeInTheDocument();
+
+    // Verify the select options are populated with rooms
+    const selectEl = screen.getByLabelText(/Select Physical Room/i);
+    expect(selectEl).toBeInTheDocument();
+    expect(screen.getByText(/Room 101/i)).toBeInTheDocument();
+    expect(screen.getByText(/Room 102/i)).toBeInTheDocument();
+  });
 });

@@ -5,6 +5,7 @@ import { Hotel } from '../utils/types/hotel';
 import { RoomType } from '../utils/types/roomType';
 import { Room } from '../utils/types/room';
 import { RoomTypeRate } from '../utils/types/roomTypeRate';
+import { Booking, AvailableRoomTypeOption } from '../utils/types/booking';
 import './SuperAdminScreen.css';
 
 export const TenantAdminScreen = () => {
@@ -17,10 +18,10 @@ export const TenantAdminScreen = () => {
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Tab State per hotel:Record<hotelId, 'room-types' | 'rooms' | 'rates'>
-  const [activeTabs, setActiveTabs] = useState<Record<string, 'room-types' | 'rooms' | 'rates'>>(
-    {},
-  );
+  // Tab State per hotel: Record<hotelId, 'room-types' | 'rooms' | 'rates' | 'bookings'>
+  const [activeTabs, setActiveTabs] = useState<
+    Record<string, 'room-types' | 'rooms' | 'rates' | 'bookings'>
+  >({});
   const [expandedHotels, setExpandedHotels] = useState<Record<string, boolean>>({});
 
   // Room Types states
@@ -38,6 +39,18 @@ export const TenantAdminScreen = () => {
   const [ratesByRoomType, setRatesByRoomType] = useState<Record<string, RoomTypeRate[]>>({});
   const [ratesLoading, setRatesLoading] = useState<Record<string, boolean>>({});
   const [ratesError, setRatesError] = useState<Record<string, string | null>>({});
+
+  // Bookings states
+  const [bookingsByHotel, setBookingsByHotel] = useState<Record<string, Booking[]>>({});
+  const [bookingsLoading, setBookingsLoading] = useState<Record<string, boolean>>({});
+  const [bookingsError, setBookingsError] = useState<Record<string, string | null>>({});
+
+  // Bookings timeline visual controls states per hotel
+  const [timelineStartDates, setTimelineStartDates] = useState<Record<string, string>>({});
+  const [timelineRangeDays, setTimelineRangeDays] = useState<Record<string, 7 | 14 | 30>>({});
+  const [bookingsViewModes, setBookingsViewModes] = useState<Record<string, 'list' | 'timeline'>>(
+    {},
+  );
 
   // Form State / Modals
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
@@ -96,6 +109,34 @@ export const TenantAdminScreen = () => {
     5: true, // Friday
     6: true, // Saturday
   });
+
+  // 4. Booking Modal States
+  const [isBookingModalOpen, setIsBookingModalOpen] = useState<boolean>(false);
+  const [bookingStep, setBookingStep] = useState<1 | 2>(1);
+  const [isSearching, setIsSearching] = useState<boolean>(false);
+
+  // Booking Search Fields (Step 1)
+  const [bCheckIn, setBCheckIn] = useState<string>('');
+  const [bCheckOut, setBCheckOut] = useState<string>('');
+  const [bAdults, setBAdults] = useState<string>('1');
+  const [bChildren, setBChildren] = useState<string>('0');
+  const [bInfants, setBInfants] = useState<string>('0');
+  const [searchOptions, setSearchOptions] = useState<AvailableRoomTypeOption[]>([]);
+
+  // Booking Details Fields (Step 2)
+  const [selectedOption, setSelectedOption] = useState<AvailableRoomTypeOption | null>(null);
+  const [guestFirstName, setGuestFirstName] = useState<string>('');
+  const [guestLastName, setGuestLastName] = useState<string>('');
+  const [guestPhone, setGuestPhone] = useState<string>('');
+  const [bookingChannel, setBookingChannel] = useState<'Direct' | 'Booking'>('Direct');
+  const [assignedRoomId, setAssignedRoomId] = useState<string>('');
+  const [specialRequests, setSpecialRequests] = useState<string>('');
+  const [internalNotes, setInternalNotes] = useState<string>('');
+
+  // 5. Assign Room Modal States
+  const [isAssignModalOpen, setIsAssignModalOpen] = useState<boolean>(false);
+  const [activeBooking, setActiveBooking] = useState<Booking | null>(null);
+  const [assignRoomId, setAssignRoomId] = useState<string>('');
 
   // Notification states
   const [notification, setNotification] = useState<{
@@ -180,6 +221,7 @@ export const TenantAdminScreen = () => {
 
       roomsList.sort((a: Room, b: Room) => a.roomNumber.localeCompare(b.roomNumber));
       setRoomsByHotel((prev) => ({ ...prev, [hotelId]: roomsList }));
+      return roomsList;
     } catch (err: any) {
       console.error(`Failed to load rooms for hotel ${hotelId}:`, err);
       setRoomsError((prev) => ({
@@ -209,7 +251,6 @@ export const TenantAdminScreen = () => {
             ? response.rates
             : [];
 
-      // Sort rates by date ascending
       ratesList.sort(
         (a: RoomTypeRate, b: RoomTypeRate) =>
           new Date(a.calendarDate).getTime() - new Date(b.calendarDate).getTime(),
@@ -223,6 +264,34 @@ export const TenantAdminScreen = () => {
       }));
     } finally {
       setRatesLoading((prev) => ({ ...prev, [roomTypeId]: false }));
+    }
+  };
+
+  // Load bookings for a hotel
+  const loadBookings = async (hotelId: string) => {
+    if (!tenantId) return;
+    setBookingsLoading((prev) => ({ ...prev, [hotelId]: true }));
+    setBookingsError((prev) => ({ ...prev, [hotelId]: null }));
+
+    try {
+      const response = await fetcher<any>(`/tenants/${tenantId}/hotels/${hotelId}/bookings`);
+      const bookingsList = Array.isArray(response)
+        ? response
+        : Array.isArray(response?.data)
+          ? response.data
+          : Array.isArray(response?.bookings)
+            ? response.bookings
+            : [];
+
+      setBookingsByHotel((prev) => ({ ...prev, [hotelId]: bookingsList }));
+    } catch (err: any) {
+      console.error(`Failed to load bookings for hotel ${hotelId}:`, err);
+      setBookingsError((prev) => ({
+        ...prev,
+        [hotelId]: err?.info?.message || err?.message || 'Failed to retrieve bookings.',
+      }));
+    } finally {
+      setBookingsLoading((prev) => ({ ...prev, [hotelId]: false }));
     }
   };
 
@@ -278,7 +347,7 @@ export const TenantAdminScreen = () => {
   // Generate 42-day Calendar Grid
   const getDaysInMonth = (year: number, month: number) => {
     const firstDay = new Date(Date.UTC(year, month, 1));
-    const startingDayOfWeek = firstDay.getUTCDay(); // 0 (Sunday) to 6 (Saturday)
+    const startingDayOfWeek = firstDay.getUTCDay();
     const totalDays = new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
 
     const days: { dateStr: string; dayNum: number; isCurrentMonth: boolean }[] = [];
@@ -309,6 +378,194 @@ export const TenantAdminScreen = () => {
     }
 
     return days;
+  };
+
+  // Generate date columns for visual timeline starting from startDateStr
+  const getTimelineDates = (startDateStr: string, daysCount: number) => {
+    const dates: { dateStr: string; weekday: string; dayNum: number; isToday: boolean }[] = [];
+    const start = new Date(`${startDateStr}T00:00:00.000Z`);
+    const todayStr = new Date().toISOString().split('T')[0];
+    const weekdays = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+    for (let i = 0; i < daysCount; i++) {
+      const curr = new Date(start);
+      curr.setUTCDate(start.getUTCDate() + i);
+      const dateStr = curr.toISOString().split('T')[0];
+      dates.push({
+        dateStr,
+        weekday: weekdays[curr.getUTCDay()],
+        dayNum: curr.getUTCDate(),
+        isToday: dateStr === todayStr,
+      });
+    }
+    return dates;
+  };
+
+  // Shift timeline start date backward/forward by active range
+  const handleTimelineNavigate = (hotelId: string, direction: 'prev' | 'next') => {
+    const startStr = timelineStartDates[hotelId] || new Date().toISOString().split('T')[0];
+    const range = timelineRangeDays[hotelId] || 7;
+    const start = new Date(`${startStr}T00:00:00.000Z`);
+    const offset = direction === 'prev' ? -range : range;
+    start.setUTCDate(start.getUTCDate() + offset);
+    setTimelineStartDates((prev) => ({ ...prev, [hotelId]: start.toISOString().split('T')[0] }));
+  };
+
+  // Render reservation cells with HTML colSpan spanning check-in to check-out
+  const renderRowCells = (
+    rowBookings: Booking[],
+    dates: { dateStr: string; weekday: string; dayNum: number; isToday: boolean }[],
+  ) => {
+    const cells: React.ReactNode[] = [];
+    const lastDate = dates[dates.length - 1].dateStr;
+    const timelineEndDateStr = new Date(new Date(`${lastDate}T00:00:00.000Z`).getTime() + 86400000)
+      .toISOString()
+      .split('T')[0];
+
+    for (let i = 0; i < dates.length; i++) {
+      const currDate = dates[i].dateStr;
+      const booking = rowBookings.find(
+        (b) => currDate >= b.checkInDate && currDate < b.checkOutDate,
+      );
+
+      if (booking) {
+        // Render starting at either the actual checkInDate, or at grid day 0 if checkInDate is before timeline
+        const isStart = currDate === booking.checkInDate || i === 0;
+
+        if (isStart) {
+          const checkOutDate = booking.checkOutDate;
+          const endRenderingDate =
+            checkOutDate < timelineEndDateStr ? checkOutDate : timelineEndDateStr;
+
+          const startMs = new Date(`${currDate}T00:00:00.000Z`).getTime();
+          const endMs = new Date(`${endRenderingDate}T00:00:00.000Z`).getTime();
+          const colSpan = Math.round((endMs - startMs) / 86400000);
+
+          cells.push(
+            <td
+              key={booking.id}
+              colSpan={colSpan}
+              className={`timeline-date-cell booked ${dates[i].isToday ? 'today' : ''}`}
+            >
+              <div
+                className={`timeline-booking-bar channel-${booking.channel.toLowerCase()}`}
+                title={`${booking.guestFirstName} ${booking.guestLastName} (${booking.channel}) - ${formatDateLabel(booking.checkInDate)} to ${formatDateLabel(booking.checkOutDate)}`}
+                onClick={() => openAssignRoomModal(booking)}
+              >
+                {colSpan === 1 ? (
+                  <span
+                    style={{
+                      fontWeight: 700,
+                      fontSize: '0.74rem',
+                      whiteSpace: 'nowrap',
+                      textOverflow: 'ellipsis',
+                      overflow: 'hidden',
+                    }}
+                  >
+                    {booking.guestLastName}
+                  </span>
+                ) : colSpan === 2 ? (
+                  <div
+                    style={{
+                      display: 'flex',
+                      flexDirection: 'column',
+                      width: '100%',
+                      overflow: 'hidden',
+                    }}
+                  >
+                    <span
+                      style={{
+                        fontWeight: 700,
+                        fontSize: '0.76rem',
+                        whiteSpace: 'nowrap',
+                        textOverflow: 'ellipsis',
+                        overflow: 'hidden',
+                      }}
+                    >
+                      {booking.guestFirstName} {booking.guestLastName[0]}.
+                    </span>
+                    <span
+                      style={{
+                        fontSize: '0.66rem',
+                        opacity: 0.8,
+                        whiteSpace: 'nowrap',
+                        textOverflow: 'ellipsis',
+                        overflow: 'hidden',
+                      }}
+                    >
+                      {booking.channel}
+                    </span>
+                  </div>
+                ) : (
+                  <div
+                    style={{
+                      display: 'flex',
+                      flexDirection: 'column',
+                      width: '100%',
+                      overflow: 'hidden',
+                      gap: '1px',
+                    }}
+                  >
+                    <span
+                      style={{
+                        fontWeight: 700,
+                        fontSize: '0.78rem',
+                        whiteSpace: 'nowrap',
+                        textOverflow: 'ellipsis',
+                        overflow: 'hidden',
+                      }}
+                    >
+                      {booking.guestFirstName} {booking.guestLastName}
+                    </span>
+                    <span
+                      style={{
+                        fontSize: '0.66rem',
+                        opacity: 0.9,
+                        whiteSpace: 'nowrap',
+                        textOverflow: 'ellipsis',
+                        overflow: 'hidden',
+                      }}
+                    >
+                      {booking.guestPhone} | {booking.channel}
+                    </span>
+                    <span
+                      style={{
+                        fontSize: '0.64rem',
+                        opacity: 0.8,
+                        whiteSpace: 'nowrap',
+                        textOverflow: 'ellipsis',
+                        overflow: 'hidden',
+                      }}
+                    >
+                      {getNights(booking.checkInDate, booking.checkOutDate)} | $
+                      {Number(booking.totalPrice).toFixed(2)}
+                    </span>
+                  </div>
+                )}
+              </div>
+            </td>,
+          );
+          // Fast-forward loop index over spanned cells
+          i += colSpan - 1;
+        } else {
+          cells.push(
+            <td
+              key={`ignored-${currDate}`}
+              className={`timeline-date-cell ${dates[i].isToday ? 'today' : ''}`}
+            />,
+          );
+        }
+      } else {
+        cells.push(
+          <td
+            key={`empty-${currDate}`}
+            className={`timeline-date-cell ${dates[i].isToday ? 'today' : ''}`}
+          />,
+        );
+      }
+    }
+
+    return cells;
   };
 
   // Toggle hotel expansion
@@ -625,7 +882,6 @@ export const TenantAdminScreen = () => {
 
   const openEditRateModal = (rate: RoomTypeRate) => {
     setActiveRate(rate);
-    // Format ISO string back to YYYY-MM-DD
     const isoDate = new Date(rate.calendarDate).toISOString().split('T')[0];
     setRateCalendarDate(isoDate);
     setRateNightlyRate(String(rate.nightlyRate));
@@ -837,6 +1093,197 @@ export const TenantAdminScreen = () => {
     }
   };
 
+  // --- BOOKING FLOW HANDLERS ---
+
+  const openCreateBookingModal = async (hotelId: string, hotelName: string) => {
+    setActiveHotelId(hotelId);
+    setActiveHotelName(hotelName);
+    setBookingStep(1);
+    setFormError(null);
+
+    const today = new Date();
+    const todayStr = today.toISOString().split('T')[0];
+    const tomorrow = new Date();
+    tomorrow.setDate(today.getDate() + 1);
+    const tomorrowStr = tomorrow.toISOString().split('T')[0];
+
+    setBCheckIn(todayStr);
+    setBCheckOut(tomorrowStr);
+    setBAdults('1');
+    setBChildren('0');
+    setBInfants('0');
+    setSearchOptions([]);
+    setSelectedOption(null);
+
+    setGuestFirstName('');
+    setGuestLastName('');
+    setGuestPhone('');
+    setBookingChannel('Direct');
+    setAssignedRoomId('');
+    setSpecialRequests('');
+    setInternalNotes('');
+
+    // Preload rooms in background for step 2 dropdown list
+    await loadRooms(hotelId);
+
+    setIsBookingModalOpen(true);
+  };
+
+  const handleSearchAvailability = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setFormError(null);
+
+    if (!bCheckIn || !bCheckOut) {
+      setFormError('Check-in and Check-out dates are required.');
+      return;
+    }
+
+    const start = new Date(`${bCheckIn}T00:00:00.000Z`);
+    const end = new Date(`${bCheckOut}T00:00:00.000Z`);
+    if (end <= start) {
+      setFormError('Check-out date must be after check-in date.');
+      return;
+    }
+
+    setIsSearching(true);
+    try {
+      const options = await fetcher<AvailableRoomTypeOption[]>(
+        `/tenants/${tenantId}/hotels/${activeHotelId}/availability?checkIn=${bCheckIn}&checkOut=${bCheckOut}&adults=${bAdults}&children=${bChildren}&infants=${bInfants}`,
+      );
+      setSearchOptions(options);
+    } catch (err: any) {
+      console.error('Failed to search availability:', err);
+      setFormError(
+        err?.info?.message || err?.message || 'Failed to search availability. Please try again.',
+      );
+    } finally {
+      setIsSearching(false);
+    }
+  };
+
+  const handleSelectRoomTypeOption = (option: AvailableRoomTypeOption) => {
+    setSelectedOption(option);
+    setBookingStep(2);
+  };
+
+  const handleCreateBookingSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setFormError(null);
+
+    if (!guestFirstName.trim() || !guestLastName.trim() || !guestPhone.trim()) {
+      setFormError('Guest details (First Name, Last Name, and Phone) are required.');
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      await fetcher<Booking>(`/tenants/${tenantId}/hotels/${activeHotelId}/bookings`, {
+        method: 'POST',
+        body: JSON.stringify({
+          guestFirstName: guestFirstName.trim(),
+          guestLastName: guestLastName.trim(),
+          guestPhone: guestPhone.trim(),
+          channel: bookingChannel,
+          checkInDate: bCheckIn,
+          checkOutDate: bCheckOut,
+          roomTypeId: selectedOption?.roomTypeId,
+          roomId: assignedRoomId || null,
+          adults: parseInt(bAdults, 10),
+          children: parseInt(bChildren, 10),
+          infants: parseInt(bInfants, 10),
+          specialRequests: specialRequests.trim() || null,
+          internalNotes: internalNotes.trim() || null,
+        }),
+      });
+
+      setNotification({
+        message: `Booking for ${guestFirstName} ${guestLastName} created successfully!`,
+        type: 'success',
+      });
+
+      setIsBookingModalOpen(false);
+      if (activeHotelId) {
+        await loadBookings(activeHotelId);
+      }
+    } catch (err: any) {
+      console.error('Failed to create booking:', err);
+      setFormError(
+        err?.info?.message || err?.message || 'Failed to complete booking. Please try again.',
+      );
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const openAssignRoomModal = async (booking: Booking) => {
+    setActiveBooking(booking);
+    setAssignRoomId(booking.roomId || '');
+    setFormError(null);
+    setIsAssignModalOpen(true);
+    await loadRooms(booking.hotelId);
+  };
+
+  const handleAssignRoomSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setFormError(null);
+    if (!activeBooking) return;
+
+    setIsSubmitting(true);
+    try {
+      await fetcher<Booking>(
+        `/tenants/${tenantId}/hotels/${activeBooking.hotelId}/bookings/${activeBooking.id}`,
+        {
+          method: 'PATCH',
+          body: JSON.stringify({
+            roomId: assignRoomId || null,
+          }),
+        },
+      );
+
+      setNotification({
+        message: `Successfully updated room assignment for ${activeBooking.guestFirstName} ${activeBooking.guestLastName}!`,
+        type: 'success',
+      });
+
+      setIsAssignModalOpen(false);
+      await loadBookings(activeBooking.hotelId);
+    } catch (err: any) {
+      console.error('Failed to assign room:', err);
+      setFormError(
+        err?.info?.message || err?.message || 'Failed to assign room. Please try again.',
+      );
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const formatDateLabel = (dateStr: string) => {
+    try {
+      const date = new Date(dateStr);
+      if (isNaN(date.getTime())) return 'N/A';
+      return date.toLocaleDateString(undefined, {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric',
+        timeZone: 'UTC',
+      });
+    } catch (_) {
+      return 'N/A';
+    }
+  };
+
+  const getNights = (inStr: string, outStr: string) => {
+    try {
+      const inDate = new Date(inStr);
+      const outDate = new Date(outStr);
+      const diff = outDate.getTime() - inDate.getTime();
+      const nights = Math.ceil(diff / (1000 * 60 * 60 * 24));
+      return nights > 0 ? `${nights} ${nights === 1 ? 'night' : 'nights'}` : '0 nights';
+    } catch (_) {
+      return '0 nights';
+    }
+  };
+
   if (userLoading) {
     return (
       <div className="dashboard-container">
@@ -879,7 +1326,7 @@ export const TenantAdminScreen = () => {
         <div className="dashboard-title-group">
           <h2>Tenant Admin Dashboard</h2>
           <p>
-            Manage hotels, configurations, rooms, and nightly pricing calendars for your
+            Manage hotels, configurations, rooms, calendar rates, and bookings for your
             organization.
           </p>
         </div>
@@ -1107,6 +1554,16 @@ export const TenantAdminScreen = () => {
                                   }}
                                 >
                                   Calendar Rates
+                                </button>
+                                <button
+                                  className={`btn ${currentTab === 'bookings' ? 'btn-primary' : 'btn-secondary'}`}
+                                  style={{ padding: '6px 12px', fontSize: '0.82rem' }}
+                                  onClick={() => {
+                                    setActiveTabs((prev) => ({ ...prev, [hotel.id]: 'bookings' }));
+                                    loadBookings(hotel.id);
+                                  }}
+                                >
+                                  Bookings
                                 </button>
                               </div>
 
@@ -1638,6 +2095,565 @@ export const TenantAdminScreen = () => {
                                   )}
                                 </div>
                               )}
+
+                              {/* TAB 4: Bookings */}
+                              {currentTab === 'bookings' &&
+                                (() => {
+                                  const viewMode = bookingsViewModes[hotel.id] || 'list';
+                                  const timelineRange = timelineRangeDays[hotel.id] || 7;
+                                  const timelineStartDate =
+                                    timelineStartDates[hotel.id] ||
+                                    new Date().toISOString().split('T')[0];
+                                  const groupBy = 'rooms';
+
+                                  return (
+                                    <div>
+                                      <div
+                                        className="nested-hotels-header"
+                                        style={{ marginBottom: '16px' }}
+                                      >
+                                        <div
+                                          style={{
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            gap: '16px',
+                                          }}
+                                        >
+                                          <h4 style={{ margin: 0 }}>
+                                            Hotel Bookings ({bookingsByHotel[hotel.id]?.length || 0}
+                                            )
+                                          </h4>
+
+                                          {/* View Mode Toggle */}
+                                          <div
+                                            className="btn-group"
+                                            style={{
+                                              display: 'flex',
+                                              background: 'rgba(255,255,255,0.03)',
+                                              padding: '2px',
+                                              borderRadius: 'var(--radius-sm)',
+                                              border: '1px solid var(--border-color)',
+                                            }}
+                                          >
+                                            <button
+                                              type="button"
+                                              className={`btn ${viewMode === 'list' ? 'btn-primary' : ''}`}
+                                              style={{
+                                                padding: '4px 10px',
+                                                fontSize: '0.78rem',
+                                                minHeight: 'auto',
+                                                background:
+                                                  viewMode === 'list'
+                                                    ? 'var(--accent)'
+                                                    : 'transparent',
+                                                border: 'none',
+                                                color:
+                                                  viewMode === 'list'
+                                                    ? '#fff'
+                                                    : 'var(--text-secondary)',
+                                              }}
+                                              onClick={() =>
+                                                setBookingsViewModes((prev) => ({
+                                                  ...prev,
+                                                  [hotel.id]: 'list',
+                                                }))
+                                              }
+                                            >
+                                              List View
+                                            </button>
+                                            <button
+                                              type="button"
+                                              className={`btn ${viewMode === 'timeline' ? 'btn-primary' : ''}`}
+                                              style={{
+                                                padding: '4px 10px',
+                                                fontSize: '0.78rem',
+                                                minHeight: 'auto',
+                                                background:
+                                                  viewMode === 'timeline'
+                                                    ? 'var(--accent)'
+                                                    : 'transparent',
+                                                border: 'none',
+                                                color:
+                                                  viewMode === 'timeline'
+                                                    ? '#fff'
+                                                    : 'var(--text-secondary)',
+                                              }}
+                                              onClick={() => {
+                                                setBookingsViewModes((prev) => ({
+                                                  ...prev,
+                                                  [hotel.id]: 'timeline',
+                                                }));
+                                                if (!timelineStartDates[hotel.id]) {
+                                                  setTimelineStartDates((prevDates) => ({
+                                                    ...prevDates,
+                                                    [hotel.id]: new Date()
+                                                      .toISOString()
+                                                      .split('T')[0],
+                                                  }));
+                                                }
+                                                if (!timelineRangeDays[hotel.id]) {
+                                                  setTimelineRangeDays((prevRange) => ({
+                                                    ...prevRange,
+                                                    [hotel.id]: 7,
+                                                  }));
+                                                }
+                                                loadRooms(hotel.id);
+                                              }}
+                                            >
+                                              Timeline View
+                                            </button>
+                                          </div>
+                                        </div>
+
+                                        <button
+                                          className="btn btn-primary"
+                                          style={{ padding: '6px 12px', fontSize: '0.82rem' }}
+                                          onClick={() =>
+                                            openCreateBookingModal(hotel.id, hotel.name)
+                                          }
+                                        >
+                                          New Booking
+                                        </button>
+                                      </div>
+
+                                      {bookingsLoading[hotel.id] ? (
+                                        <div
+                                          className="nested-hotels-table-wrapper"
+                                          style={{ padding: '16px' }}
+                                        >
+                                          <div
+                                            className="skeleton-line"
+                                            style={{ width: '100%', marginBottom: '8px' }}
+                                          />
+                                          <div className="skeleton-line" style={{ width: '60%' }} />
+                                        </div>
+                                      ) : bookingsError[hotel.id] ? (
+                                        <div
+                                          className="notification-banner error"
+                                          style={{ margin: 0 }}
+                                        >
+                                          {bookingsError[hotel.id]}
+                                        </div>
+                                      ) : !bookingsByHotel[hotel.id] ||
+                                        bookingsByHotel[hotel.id].length === 0 ? (
+                                        <div className="nested-hotels-table-wrapper">
+                                          <div className="nested-hotels-empty">
+                                            No bookings recorded for this hotel yet. Click 'New
+                                            Booking' to reserve rooms.
+                                          </div>
+                                        </div>
+                                      ) : (
+                                        <>
+                                          {/* 1. LIST VIEW MODE */}
+                                          {viewMode === 'list' && (
+                                            <div className="nested-hotels-table-wrapper">
+                                              <table className="nested-hotels-table">
+                                                <thead>
+                                                  <tr>
+                                                    <th>Guest Name</th>
+                                                    <th>Phone</th>
+                                                    <th>Stay Dates</th>
+                                                    <th>Room / Type</th>
+                                                    <th>Channel</th>
+                                                    <th>Total Price</th>
+                                                    <th>Booked On</th>
+                                                  </tr>
+                                                </thead>
+                                                <tbody>
+                                                  {bookingsByHotel[hotel.id].map((booking) => (
+                                                    <tr key={booking.id}>
+                                                      <td style={{ fontWeight: 600 }}>
+                                                        {booking.guestFirstName}{' '}
+                                                        {booking.guestLastName}
+                                                      </td>
+                                                      <td style={{ fontSize: '0.88rem' }}>
+                                                        {booking.guestPhone}
+                                                      </td>
+                                                      <td style={{ fontSize: '0.85rem' }}>
+                                                        <div>
+                                                          <strong>
+                                                            {formatDateLabel(booking.checkInDate)}
+                                                          </strong>{' '}
+                                                          to{' '}
+                                                          <strong>
+                                                            {formatDateLabel(booking.checkOutDate)}
+                                                          </strong>
+                                                        </div>
+                                                        <div
+                                                          style={{
+                                                            fontSize: '0.75rem',
+                                                            color: 'var(--text-muted)',
+                                                          }}
+                                                        >
+                                                          {getNights(
+                                                            booking.checkInDate,
+                                                            booking.checkOutDate,
+                                                          )}{' '}
+                                                          (A: {booking.adults}, C:{' '}
+                                                          {booking.children})
+                                                        </div>
+                                                      </td>
+                                                      <td>
+                                                        <div>{booking.roomType?.name}</div>
+                                                        <div
+                                                          style={{
+                                                            fontSize: '0.78rem',
+                                                            color: 'var(--text-muted)',
+                                                            display: 'flex',
+                                                            alignItems: 'center',
+                                                            gap: '8px',
+                                                            marginTop: '2px',
+                                                          }}
+                                                        >
+                                                          <span>
+                                                            {booking.room
+                                                              ? `Room ${booking.room.roomNumber}`
+                                                              : 'Unassigned'}
+                                                          </span>
+                                                          <button
+                                                            type="button"
+                                                            style={{
+                                                              background: 'none',
+                                                              border: 'none',
+                                                              padding: 0,
+                                                              color: 'var(--accent)',
+                                                              fontSize: '0.75rem',
+                                                              textDecoration: 'underline',
+                                                              cursor: 'pointer',
+                                                            }}
+                                                            onClick={() =>
+                                                              openAssignRoomModal(booking)
+                                                            }
+                                                          >
+                                                            {booking.room ? 'Change' : 'Assign'}
+                                                          </button>
+                                                        </div>
+                                                      </td>
+                                                      <td>
+                                                        <span
+                                                          style={{
+                                                            padding: '3px 8px',
+                                                            borderRadius: '4px',
+                                                            fontSize: '0.8rem',
+                                                            fontWeight: 600,
+                                                            backgroundColor:
+                                                              booking.channel === 'Direct'
+                                                                ? 'rgba(16, 185, 129, 0.15)'
+                                                                : 'rgba(99, 102, 241, 0.15)',
+                                                            color:
+                                                              booking.channel === 'Direct'
+                                                                ? '#a7f3d0'
+                                                                : '#c7d2fe',
+                                                            border:
+                                                              booking.channel === 'Direct'
+                                                                ? '1px solid var(--success)'
+                                                                : '1px solid var(--accent)',
+                                                          }}
+                                                        >
+                                                          {booking.channel}
+                                                        </span>
+                                                      </td>
+                                                      <td
+                                                        style={{
+                                                          fontWeight: 600,
+                                                          color: 'var(--success)',
+                                                        }}
+                                                      >
+                                                        ${Number(booking.totalPrice).toFixed(2)}
+                                                      </td>
+                                                      <td
+                                                        className="tenant-date"
+                                                        style={{ fontSize: '0.82rem' }}
+                                                      >
+                                                        {new Date(
+                                                          booking.createdAt,
+                                                        ).toLocaleDateString(undefined, {
+                                                          year: 'numeric',
+                                                          month: 'short',
+                                                          day: 'numeric',
+                                                        })}
+                                                      </td>
+                                                    </tr>
+                                                  ))}
+                                                </tbody>
+                                              </table>
+                                            </div>
+                                          )}
+
+                                          {/* 2. TIMELINE VIEW MODE */}
+                                          {viewMode === 'timeline' && (
+                                            <div>
+                                              {/* Navigation & Controls Toolbar */}
+                                              <div className="timeline-toolbar">
+                                                <div
+                                                  style={{
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    gap: '8px',
+                                                  }}
+                                                >
+                                                  <button
+                                                    type="button"
+                                                    className="btn btn-secondary"
+                                                    style={{
+                                                      padding: '6px 12px',
+                                                      fontSize: '0.82rem',
+                                                    }}
+                                                    onClick={() =>
+                                                      handleTimelineNavigate(hotel.id, 'prev')
+                                                    }
+                                                  >
+                                                    ◀ Prev
+                                                  </button>
+                                                  <button
+                                                    type="button"
+                                                    className="btn btn-secondary"
+                                                    style={{
+                                                      padding: '6px 12px',
+                                                      fontSize: '0.82rem',
+                                                    }}
+                                                    onClick={() => {
+                                                      const todayStr = new Date()
+                                                        .toISOString()
+                                                        .split('T')[0];
+                                                      setTimelineStartDates((prev) => ({
+                                                        ...prev,
+                                                        [hotel.id]: todayStr,
+                                                      }));
+                                                    }}
+                                                  >
+                                                    Today
+                                                  </button>
+                                                  <button
+                                                    type="button"
+                                                    className="btn btn-secondary"
+                                                    style={{
+                                                      padding: '6px 12px',
+                                                      fontSize: '0.82rem',
+                                                    }}
+                                                    onClick={() =>
+                                                      handleTimelineNavigate(hotel.id, 'next')
+                                                    }
+                                                  >
+                                                    Next ▶
+                                                  </button>
+                                                  <span
+                                                    style={{
+                                                      fontSize: '0.92rem',
+                                                      fontWeight: 600,
+                                                      marginLeft: '8px',
+                                                      color: 'var(--text-primary)',
+                                                    }}
+                                                  >
+                                                    {(() => {
+                                                      const dates = getTimelineDates(
+                                                        timelineStartDate,
+                                                        timelineRange,
+                                                      );
+                                                      return `${formatDateLabel(dates[0].dateStr)} to ${formatDateLabel(dates[dates.length - 1].dateStr)}`;
+                                                    })()}
+                                                  </span>
+                                                </div>
+
+                                                <div
+                                                  style={{
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    gap: '16px',
+                                                  }}
+                                                >
+                                                  {/* View Days range select */}
+                                                  <div
+                                                    className="btn-group"
+                                                    style={{
+                                                      display: 'flex',
+                                                      background: 'rgba(255,255,255,0.03)',
+                                                      padding: '2px',
+                                                      borderRadius: 'var(--radius-sm)',
+                                                      border: '1px solid var(--border-color)',
+                                                    }}
+                                                  >
+                                                    {([7, 14, 30] as const).map((days) => (
+                                                      <button
+                                                        key={days}
+                                                        type="button"
+                                                        className="btn"
+                                                        style={{
+                                                          padding: '4px 8px',
+                                                          fontSize: '0.78rem',
+                                                          minHeight: 'auto',
+                                                          background:
+                                                            timelineRange === days
+                                                              ? 'var(--accent)'
+                                                              : 'transparent',
+                                                          border: 'none',
+                                                          color:
+                                                            timelineRange === days
+                                                              ? '#fff'
+                                                              : 'var(--text-secondary)',
+                                                        }}
+                                                        onClick={() =>
+                                                          setTimelineRangeDays((prev) => ({
+                                                            ...prev,
+                                                            [hotel.id]: days,
+                                                          }))
+                                                        }
+                                                      >
+                                                        {days} Days
+                                                      </button>
+                                                    ))}
+                                                  </div>
+                                                </div>
+                                              </div>
+
+                                              {/* Scrollable grid tape-chart */}
+                                              <div className="timeline-wrapper">
+                                                <table
+                                                  className="timeline-table"
+                                                  style={{
+                                                    minWidth: `calc(200px + ${timelineRange} * 60px)`,
+                                                  }}
+                                                >
+                                                  <thead>
+                                                    <tr>
+                                                      <th
+                                                        className="timeline-label-cell"
+                                                        style={{
+                                                          borderBottom:
+                                                            '2px solid var(--border-color)',
+                                                        }}
+                                                      >
+                                                        'Room Number'
+                                                      </th>
+                                                      {getTimelineDates(
+                                                        timelineStartDate,
+                                                        timelineRange,
+                                                      ).map(
+                                                        ({ dateStr, weekday, dayNum, isToday }) => (
+                                                          <th
+                                                            key={dateStr}
+                                                            className={`timeline-header-cell ${isToday ? 'today' : ''}`}
+                                                            style={{
+                                                              borderBottom:
+                                                                '2px solid var(--border-color)',
+                                                            }}
+                                                          >
+                                                            <div>{weekday}</div>
+                                                            <div
+                                                              style={{
+                                                                fontSize: '1.05rem',
+                                                                fontWeight: 700,
+                                                                marginTop: '2px',
+                                                              }}
+                                                            >
+                                                              {dayNum}
+                                                            </div>
+                                                          </th>
+                                                        ),
+                                                      )}
+                                                    </tr>
+                                                  </thead>
+                                                  <tbody>
+                                                    {(() => {
+                                                      const hotelRooms =
+                                                        roomsByHotel[hotel.id] || [];
+                                                      const hotelBookings =
+                                                        bookingsByHotel[hotel.id] || [];
+                                                      const dates = getTimelineDates(
+                                                        timelineStartDate,
+                                                        timelineRange,
+                                                      );
+
+                                                      const unassignedBookings =
+                                                        hotelBookings.filter(
+                                                          (b) =>
+                                                            !b.roomId &&
+                                                            dates.some(
+                                                              (d) =>
+                                                                d.dateStr >=
+                                                                  b.checkInDate.split('T')[0] &&
+                                                                d.dateStr <
+                                                                  b.checkOutDate.split('T')[0],
+                                                            ),
+                                                        );
+
+                                                      return (
+                                                        <>
+                                                          {unassignedBookings.map((b) => (
+                                                            <tr key={b.id}>
+                                                              <td
+                                                                className="timeline-label-cell"
+                                                                style={{
+                                                                  color: '#fca5a5',
+                                                                  fontStyle: 'italic',
+                                                                }}
+                                                              >
+                                                                Unassigned: {b.guestLastName}
+                                                              </td>
+                                                              {renderRowCells([b], dates)}
+                                                            </tr>
+                                                          ))}
+
+                                                          {hotelRooms.length === 0 ? (
+                                                            <tr>
+                                                              <td
+                                                                colSpan={timelineRange + 1}
+                                                                className="nested-hotels-empty"
+                                                                style={{ padding: '32px' }}
+                                                              >
+                                                                No rooms configured for this hotel
+                                                                yet. Create rooms in the 'Rooms'
+                                                                tab.
+                                                              </td>
+                                                            </tr>
+                                                          ) : (
+                                                            hotelRooms.map((room) => {
+                                                              const roomBookings =
+                                                                hotelBookings.filter(
+                                                                  (b) => b.roomId === room.id,
+                                                                );
+                                                              const roomTypeName =
+                                                                roomTypesByHotel[hotel.id]?.find(
+                                                                  (t) => t.id === room.roomTypeId,
+                                                                )?.name || 'Unknown';
+                                                              return (
+                                                                <tr key={room.id}>
+                                                                  <td
+                                                                    className="timeline-label-cell"
+                                                                    title={`Room ${room.roomNumber} (${roomTypeName})`}
+                                                                  >
+                                                                    Room {room.roomNumber}{' '}
+                                                                    <span
+                                                                      style={{
+                                                                        fontSize: '0.75rem',
+                                                                        fontWeight: 400,
+                                                                        color: 'var(--text-muted)',
+                                                                      }}
+                                                                    >
+                                                                      ({roomTypeName})
+                                                                    </span>
+                                                                  </td>
+                                                                  {renderRowCells(
+                                                                    roomBookings,
+                                                                    dates,
+                                                                  )}
+                                                                </tr>
+                                                              );
+                                                            })
+                                                          )}
+                                                        </>
+                                                      );
+                                                    })()}
+                                                  </tbody>
+                                                </table>
+                                              </div>
+                                            </div>
+                                          )}
+                                        </>
+                                      )}
+                                    </div>
+                                  );
+                                })()}
                             </div>
                           </td>
                         </tr>
@@ -1654,11 +2670,7 @@ export const TenantAdminScreen = () => {
       {/* Add Room Type Modal */}
       {isCreateModalOpen && (
         <div className="modal-overlay" onClick={() => !isSubmitting && setIsCreateModalOpen(false)}>
-          <div
-            className="modal-content"
-            style={{ maxWidth: '600px' }}
-            onClick={(e) => e.stopPropagation()}
-          >
+          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
               <h3>Add Room Type for {activeHotelName}</h3>
               <button
@@ -1815,11 +2827,7 @@ export const TenantAdminScreen = () => {
       {/* Edit Room Type Modal */}
       {isEditModalOpen && (
         <div className="modal-overlay" onClick={() => !isSubmitting && setIsEditModalOpen(false)}>
-          <div
-            className="modal-content"
-            style={{ maxWidth: '600px' }}
-            onClick={(e) => e.stopPropagation()}
-          >
+          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
               <h3>Edit Room Type: {activeRoomType?.name}</h3>
               <button
@@ -2301,7 +3309,7 @@ export const TenantAdminScreen = () => {
                   Cancel
                 </button>
                 <button type="submit" className="btn btn-primary" disabled={isSubmitting}>
-                  {isSubmitting ? 'Saving...' : 'Save Changes'}
+                  Saving...
                 </button>
               </div>
             </form>
@@ -2450,6 +3458,515 @@ export const TenantAdminScreen = () => {
                 </button>
                 <button type="submit" className="btn btn-primary" disabled={isSubmitting}>
                   {isSubmitting ? 'Updating...' : 'Apply Bulk Rates'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Availability Search & New Booking Flow Modal */}
+      {isBookingModalOpen && (
+        <div
+          className="modal-overlay"
+          onClick={() => !isSubmitting && setIsBookingModalOpen(false)}
+        >
+          <div
+            className="modal-content"
+            style={{ maxWidth: bookingStep === 1 ? '680px' : '600px' }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="modal-header">
+              <h3>
+                {bookingStep === 1
+                  ? `Search Availability: ${activeHotelName}`
+                  : `Guest & Booking Details: ${activeHotelName}`}
+              </h3>
+              <button
+                className="modal-close-btn"
+                onClick={() => setIsBookingModalOpen(false)}
+                disabled={isSubmitting}
+              >
+                <svg
+                  width="20"
+                  height="20"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <line x1="18" y1="6" x2="6" y2="18" />
+                  <line x1="6" y1="6" x2="18" y2="18" />
+                </svg>
+              </button>
+            </div>
+
+            {bookingStep === 1 ? (
+              /* STEP 1: Search Form & Available Room Types List */
+              <div>
+                <form onSubmit={handleSearchAvailability}>
+                  <div className="modal-body" style={{ paddingBottom: 0 }}>
+                    {formError && (
+                      <div className="notification-banner error" style={{ margin: '0 0 16px' }}>
+                        {formError}
+                      </div>
+                    )}
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                      <div className="form-group">
+                        <label>Check-in Date</label>
+                        <input
+                          type="date"
+                          className="form-control"
+                          value={bCheckIn}
+                          onChange={(e) => setBCheckIn(e.target.value)}
+                          disabled={isSubmitting}
+                          required
+                        />
+                      </div>
+                      <div className="form-group">
+                        <label>Check-out Date</label>
+                        <input
+                          type="date"
+                          className="form-control"
+                          value={bCheckOut}
+                          onChange={(e) => setBCheckOut(e.target.value)}
+                          disabled={isSubmitting}
+                          required
+                        />
+                      </div>
+                    </div>
+
+                    <div
+                      style={{
+                        display: 'grid',
+                        gridTemplateColumns: '1fr 1fr 1fr',
+                        gap: '16px',
+                        marginTop: '12px',
+                      }}
+                    >
+                      <div className="form-group">
+                        <label>Adults</label>
+                        <input
+                          type="number"
+                          className="form-control"
+                          min="1"
+                          value={bAdults}
+                          onChange={(e) => setBAdults(e.target.value)}
+                          disabled={isSubmitting}
+                          required
+                        />
+                      </div>
+                      <div className="form-group">
+                        <label>Children</label>
+                        <input
+                          type="number"
+                          className="form-control"
+                          min="0"
+                          value={bChildren}
+                          onChange={(e) => setBChildren(e.target.value)}
+                          disabled={isSubmitting}
+                          required
+                        />
+                      </div>
+                      <div className="form-group">
+                        <label>Infants</label>
+                        <input
+                          type="number"
+                          className="form-control"
+                          min="0"
+                          value={bInfants}
+                          onChange={(e) => setBInfants(e.target.value)}
+                          disabled={isSubmitting}
+                          required
+                        />
+                      </div>
+                    </div>
+
+                    <div style={{ marginTop: '16px', display: 'flex', justifyContent: 'flex-end' }}>
+                      <button type="submit" className="btn btn-primary" disabled={isSearching}>
+                        {isSearching ? 'Searching...' : 'Search Availability'}
+                      </button>
+                    </div>
+                  </div>
+                </form>
+
+                <div className="modal-body">
+                  <h4
+                    style={{
+                      borderBottom: '1px solid var(--border-color)',
+                      paddingBottom: '8px',
+                      marginBottom: '12px',
+                    }}
+                  >
+                    Available Accommodation Types
+                  </h4>
+
+                  {isSearching ? (
+                    <div style={{ padding: '16px 0' }}>
+                      <div
+                        className="skeleton-line"
+                        style={{ width: '100%', marginBottom: '8px' }}
+                      />
+                      <div
+                        className="skeleton-line"
+                        style={{ width: '80%', marginBottom: '8px' }}
+                      />
+                      <div className="skeleton-line" style={{ width: '50%' }} />
+                    </div>
+                  ) : searchOptions.length === 0 ? (
+                    <div
+                      style={{
+                        textAlign: 'center',
+                        padding: '24px',
+                        color: 'var(--text-secondary)',
+                      }}
+                    >
+                      No room types found. Fill out parameters above and click Search.
+                    </div>
+                  ) : (
+                    <div
+                      style={{
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '12px',
+                        maxHeight: '250px',
+                        overflowY: 'auto',
+                      }}
+                    >
+                      {searchOptions.map((opt) => (
+                        <div
+                          key={opt.roomTypeId}
+                          style={{
+                            padding: '12px 16px',
+                            backgroundColor: 'rgba(255, 255, 255, 0.02)',
+                            border: '1px solid var(--border-color)',
+                            borderRadius: 'var(--radius-sm)',
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center',
+                            gap: '16px',
+                          }}
+                        >
+                          <div>
+                            <div style={{ fontWeight: 600, fontSize: '1rem' }}>{opt.name}</div>
+                            <div
+                              style={{
+                                fontSize: '0.82rem',
+                                color: 'var(--text-secondary)',
+                                marginTop: '4px',
+                              }}
+                            >
+                              {opt.description || 'No description available'}
+                            </div>
+                            <div
+                              style={{
+                                fontSize: '0.78rem',
+                                color: 'var(--text-muted)',
+                                marginTop: '4px',
+                              }}
+                            >
+                              Available Rooms: <strong>{opt.availableRoomsCount}</strong> | Stay
+                              Nights: {getNights(bCheckIn, bCheckOut)}
+                            </div>
+                          </div>
+                          <div
+                            style={{
+                              textAlign: 'right',
+                              display: 'flex',
+                              flexDirection: 'column',
+                              alignItems: 'flex-end',
+                              gap: '8px',
+                            }}
+                          >
+                            <div
+                              style={{
+                                fontWeight: 700,
+                                color: 'var(--success)',
+                                fontSize: '1.2rem',
+                              }}
+                            >
+                              ${opt.totalPrice.toFixed(2)}
+                            </div>
+                            <button
+                              type="button"
+                              className="btn btn-primary"
+                              style={{ padding: '6px 12px', fontSize: '0.82rem' }}
+                              onClick={() => handleSelectRoomTypeOption(opt)}
+                            >
+                              Select Room
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            ) : (
+              /* STEP 2: Fill Guest Details & Confirm */
+              <form onSubmit={handleCreateBookingSubmit}>
+                <div
+                  className="modal-body"
+                  style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}
+                >
+                  {formError && (
+                    <div className="notification-banner error" style={{ margin: 0 }}>
+                      {formError}
+                    </div>
+                  )}
+
+                  {/* Summary Box */}
+                  <div
+                    style={{
+                      padding: '12px 16px',
+                      backgroundColor: 'rgba(99, 102, 241, 0.06)',
+                      border: '1px solid var(--accent)',
+                      borderRadius: 'var(--radius-sm)',
+                      fontSize: '0.9rem',
+                    }}
+                  >
+                    <div
+                      style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 600 }}
+                    >
+                      <span>Selected Category: {selectedOption?.name}</span>
+                      <span style={{ color: 'var(--success)', fontWeight: 700 }}>
+                        Total Price: ${selectedOption?.totalPrice.toFixed(2)}
+                      </span>
+                    </div>
+                    <div
+                      style={{
+                        color: 'var(--text-secondary)',
+                        fontSize: '0.82rem',
+                        marginTop: '4px',
+                      }}
+                    >
+                      Stay: <strong>{formatDateLabel(bCheckIn)}</strong> to{' '}
+                      <strong>{formatDateLabel(bCheckOut)}</strong> (
+                      {getNights(bCheckIn, bCheckOut)}) | Guests: {bAdults} Adults, {bChildren}{' '}
+                      Children, {bInfants} Infants
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                    <div className="form-group">
+                      <label>Guest First Name</label>
+                      <input
+                        type="text"
+                        className="form-control"
+                        placeholder="John"
+                        value={guestFirstName}
+                        onChange={(e) => setGuestFirstName(e.target.value)}
+                        disabled={isSubmitting}
+                        required
+                      />
+                    </div>
+                    <div className="form-group">
+                      <label>Guest Last Name</label>
+                      <input
+                        type="text"
+                        className="form-control"
+                        placeholder="Doe"
+                        value={guestLastName}
+                        onChange={(e) => setGuestLastName(e.target.value)}
+                        disabled={isSubmitting}
+                        required
+                      />
+                    </div>
+                  </div>
+
+                  <div className="form-group">
+                    <label>Guest Phone Number</label>
+                    <input
+                      type="text"
+                      className="form-control"
+                      placeholder="e.g. +30 691 234567"
+                      value={guestPhone}
+                      onChange={(e) => setGuestPhone(e.target.value)}
+                      disabled={isSubmitting}
+                      required
+                    />
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                    <div className="form-group">
+                      <label>Booking Channel</label>
+                      <select
+                        className="form-control"
+                        value={bookingChannel}
+                        onChange={(e) => setBookingChannel(e.target.value as any)}
+                        disabled={isSubmitting}
+                        required
+                      >
+                        <option value="Direct">Direct</option>
+                        <option value="Booking">Booking.com</option>
+                      </select>
+                    </div>
+
+                    <div className="form-group">
+                      <label>Assign Physical Room (Optional)</label>
+                      <select
+                        className="form-control"
+                        value={assignedRoomId}
+                        onChange={(e) => setAssignedRoomId(e.target.value)}
+                        disabled={isSubmitting}
+                      >
+                        <option value="">Auto-assign / Unassigned</option>
+                        {(roomsByHotel[activeHotelId || ''] || [])
+                          .filter((r) => r.roomTypeId === selectedOption?.roomTypeId)
+                          .map((room) => (
+                            <option key={room.id} value={room.id}>
+                              Room {room.roomNumber}
+                            </option>
+                          ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="form-group">
+                    <label>Special Requests</label>
+                    <textarea
+                      className="form-control"
+                      placeholder="e.g. Extra towels, quiet room..."
+                      value={specialRequests}
+                      onChange={(e) => setSpecialRequests(e.target.value)}
+                      disabled={isSubmitting}
+                      rows={2}
+                    />
+                  </div>
+
+                  <div className="form-group">
+                    <label>Internal Notes</label>
+                    <textarea
+                      className="form-control"
+                      placeholder="e.g. Late check-in scheduled, vip guest..."
+                      value={internalNotes}
+                      onChange={(e) => setInternalNotes(e.target.value)}
+                      disabled={isSubmitting}
+                      rows={2}
+                    />
+                  </div>
+                </div>
+
+                <div className="modal-footer">
+                  <button
+                    type="button"
+                    className="btn btn-secondary"
+                    onClick={() => setBookingStep(1)}
+                    disabled={isSubmitting}
+                  >
+                    Back to Search
+                  </button>
+                  <button type="submit" className="btn btn-primary" disabled={isSubmitting}>
+                    {isSubmitting ? 'Reserving...' : 'Confirm Booking'}
+                  </button>
+                </div>
+              </form>
+            )}
+          </div>
+        </div>
+      )}
+      {/* Assign Room Modal */}
+      {isAssignModalOpen && activeBooking && (
+        <div className="modal-overlay" onClick={() => !isSubmitting && setIsAssignModalOpen(false)}>
+          <div
+            className="modal-content"
+            style={{ maxWidth: '500px' }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="modal-header">
+              <h3>
+                Assign Room: {activeBooking.guestFirstName} {activeBooking.guestLastName}
+              </h3>
+              <button
+                className="modal-close-btn"
+                onClick={() => setIsAssignModalOpen(false)}
+                disabled={isSubmitting}
+              >
+                <svg
+                  width="20"
+                  height="20"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <line x1="18" y1="6" x2="6" y2="18" />
+                  <line x1="6" y1="6" x2="18" y2="18" />
+                </svg>
+              </button>
+            </div>
+
+            <form onSubmit={handleAssignRoomSubmit}>
+              <div
+                className="modal-body"
+                style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}
+              >
+                {formError && (
+                  <div className="notification-banner error" style={{ margin: 0 }}>
+                    {formError}
+                  </div>
+                )}
+
+                {/* Booking summary info */}
+                <div
+                  style={{
+                    padding: '12px 16px',
+                    backgroundColor: 'rgba(255, 255, 255, 0.02)',
+                    border: '1px solid var(--border-color)',
+                    borderRadius: 'var(--radius-sm)',
+                    fontSize: '0.88rem',
+                    lineHeight: '1.5',
+                  }}
+                >
+                  <div>
+                    Category: <strong>{activeBooking.roomType?.name}</strong>
+                  </div>
+                  <div>
+                    Stay: <strong>{formatDateLabel(activeBooking.checkInDate)}</strong> to{' '}
+                    <strong>{formatDateLabel(activeBooking.checkOutDate)}</strong> (
+                    {getNights(activeBooking.checkInDate, activeBooking.checkOutDate)})
+                  </div>
+                  <div>
+                    Channel: <strong>{activeBooking.channel}</strong>
+                  </div>
+                </div>
+
+                <div className="form-group">
+                  <label htmlFor="assignRoomSelect">Select Physical Room</label>
+                  <select
+                    id="assignRoomSelect"
+                    className="form-control"
+                    value={assignRoomId}
+                    onChange={(e) => setAssignRoomId(e.target.value)}
+                    disabled={isSubmitting}
+                  >
+                    <option value="">Unassigned / Auto-assign</option>
+                    {(roomsByHotel[activeBooking.hotelId] || [])
+                      .filter((r) => r.roomTypeId === activeBooking.roomTypeId)
+                      .map((room) => (
+                        <option key={room.id} value={room.id}>
+                          Room {room.roomNumber}
+                        </option>
+                      ))}
+                  </select>
+                </div>
+              </div>
+
+              <div className="modal-footer">
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  onClick={() => setIsAssignModalOpen(false)}
+                  disabled={isSubmitting}
+                >
+                  Cancel
+                </button>
+                <button type="submit" className="btn btn-primary" disabled={isSubmitting}>
+                  {isSubmitting ? 'Saving...' : 'Update Assignment'}
                 </button>
               </div>
             </form>
